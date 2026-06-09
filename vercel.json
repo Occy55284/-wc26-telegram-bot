@@ -3,14 +3,15 @@
     {
       "path": "/api/notify",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/reminder",
+      "schedule": "0 17 * * *"
     }
   ],
   "functions": {
-    "api/notify.js": {
-      "maxDuration": 30
-    },
-    "api/webhook.js": {
-      "maxDuration": 30
-    }
+    "api/notify.js": { "maxDuration": 30 },
+    "api/webhook.js": { "maxDuration": 30 },
+    "api/reminder.js": { "maxDuration": 30 }
   }
 }
