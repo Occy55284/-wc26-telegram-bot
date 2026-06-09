@@ -79,30 +79,6 @@ export default async function handler(req, res) {
     return s;
   }
 
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const todayStr = today.toISOString().split("T")[0];
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
-
-  const hdrs = { "X-Auth-Token": footballKey };
-  const base = "https://api.football-data.org/v4/competitions/WC";
-
-  const [resR, resF, resSt, resSc] = await Promise.all([
-    fetch(`${base}/matches?dateFrom=${yesterdayStr}&dateTo=${yesterdayStr}`, { headers: hdrs }),
-    fetch(`${base}/matches?dateFrom=${todayStr}&dateTo=${todayStr}`, { headers: hdrs }),
-    fetch(`${base}/standings`, { headers: hdrs }),
-    fetch(`${base}/scorers?limit=10`, { headers: hdrs }),
-  ]);
-
-  const [{ matches: results = [] }, { matches: fixtures = [] }, standingsData, scorersData] = await Promise.all([
-    resR.json(), resF.json(), resSt.json(), resSc.json(),
-  ]);
-
-  const dateLabel = today.toLocaleDateString("en-GB", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
-
   async function send(text) {
     const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
@@ -112,70 +88,107 @@ export default async function handler(req, res) {
     if (!r.ok) console.error("Telegram send failed:", await r.text());
   }
 
-  // --- Message 1: Results + Fixtures ---
-  let msg1 = `🏆 *World Cup 2026 — Daily Update*\n_${dateLabel}_\n\n`;
-
-  if (results.length > 0) {
-    msg1 += "📊 *Yesterday's Results*\n\n";
-    for (const m of results) {
-      const home = m.homeTeam.name;
-      const away = m.awayTeam.name;
-      msg1 += `${getFlag(home)} ${home}  ${scoreDetail(m)}  ${away} ${getFlag(away)}\n`;
-      msg1 += `_${stageLabel(m)}`;
-      if (m.venue) msg1 += `  •  📍 ${m.venue}`;
-      msg1 += "_\n\n";
+  async function fetchJson(url, options) {
+    const r = await fetch(url, options);
+    if (!r.ok) {
+      console.error(`HTTP ${r.status} fetching ${url}`);
+      return null;
     }
-  } else {
-    msg1 += "📊 *Yesterday's Results*\nNo matches yesterday\n\n";
+    return r.json();
   }
 
-  if (fixtures.length > 0) {
-    msg1 += "📅 *Today's Fixtures*\n\n";
-    for (const m of fixtures) {
-      const home = m.homeTeam.name;
-      const away = m.awayTeam.name;
-      msg1 += `${getFlag(home)} ${home} vs ${away} ${getFlag(away)}\n`;
-      msg1 += `_🕐 ${toUKTime(m.utcDate)} UK  •  ${stageLabel(m)}`;
-      if (m.venue) msg1 += `  •  📍 ${m.venue}`;
-      msg1 += "_\n\n";
-    }
-  } else {
-    msg1 += "📅 *Today's Fixtures*\nNo matches today\n";
-  }
+  try {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const todayStr = today.toISOString().split("T")[0];
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
 
-  await send(msg1);
+    const hdrs = { "X-Auth-Token": footballKey };
+    const base = "https://api.football-data.org/v4/competitions/WC";
 
-  // --- Message 2: Group Standings ---
-  const groupStandings = (standingsData.standings || []).filter(s => s.type === "TOTAL");
-  if (groupStandings.length > 0) {
-    let msg2 = "📋 *Group Standings*\n\n";
-    for (const group of groupStandings) {
-      const gName = group.group.replace("GROUP_", "Group ");
-      msg2 += `*${gName}*\n`;
-      for (const r of group.table) {
-        const gd = r.goalDifference >= 0 ? `+${r.goalDifference}` : `${r.goalDifference}`;
-        const name = r.team.shortName || r.team.name;
-        msg2 += `${r.position}. ${getFlag(r.team.name)} ${name}  `;
-        msg2 += `${r.won}-${r.draw}-${r.lost}  GD${gd}  *${r.points}pts*\n`;
+    const [resultsData, fixturesData, standingsData, scorersData] = await Promise.all([
+      fetchJson(`${base}/matches?dateFrom=${yesterdayStr}&dateTo=${yesterdayStr}`, { headers: hdrs }),
+      fetchJson(`${base}/matches?dateFrom=${todayStr}&dateTo=${todayStr}`, { headers: hdrs }),
+      fetchJson(`${base}/standings`, { headers: hdrs }),
+      fetchJson(`${base}/scorers?limit=10`, { headers: hdrs }),
+    ]);
+
+    const results = resultsData?.matches ?? [];
+    const fixtures = fixturesData?.matches ?? [];
+
+    const dateLabel = today.toLocaleDateString("en-GB", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+    });
+
+    // --- Message 1: Results + Fixtures ---
+    let msg1 = `🏆 *World Cup 2026 — Daily Update*\n_${dateLabel}_\n\n`;
+
+    if (results.length > 0) {
+      msg1 += "📊 *Yesterday's Results*\n\n";
+      for (const m of results) {
+        const home = m.homeTeam.name;
+        const away = m.awayTeam.name;
+        msg1 += `${getFlag(home)} ${home}  ${scoreDetail(m)}  ${away} ${getFlag(away)}\n`;
+        msg1 += `_${stageLabel(m)}`;
+        if (m.venue) msg1 += `  •  📍 ${m.venue}`;
+        msg1 += "_\n\n";
       }
-      msg2 += "\n";
+    } else {
+      msg1 += "📊 *Yesterday's Results*\nNo matches yesterday\n\n";
     }
-    await send(msg2);
-  }
 
-  // --- Message 3: Top Scorers ---
-  const scorers = scorersData.scorers || [];
-  if (scorers.length > 0) {
-    let msg3 = "🥅 *Top Scorers*\n\n";
-    for (let i = 0; i < scorers.length; i++) {
-      const s = scorers[i];
-      msg3 += `${i + 1}. ${getFlag(s.team.name)} ${s.player.name} — ${s.goals} ⚽`;
-      if (s.penalties) msg3 += ` (${s.penalties} pen)`;
-      if (s.assists) msg3 += `  ${s.assists} 🅰️`;
-      msg3 += "\n";
+    if (fixtures.length > 0) {
+      msg1 += "📅 *Today's Fixtures*\n\n";
+      for (const m of fixtures) {
+        const home = m.homeTeam.name;
+        const away = m.awayTeam.name;
+        msg1 += `${getFlag(home)} ${home} vs ${away} ${getFlag(away)}\n`;
+        msg1 += `_🕐 ${toUKTime(m.utcDate)} UK  •  ${stageLabel(m)}`;
+        if (m.venue) msg1 += `  •  📍 ${m.venue}`;
+        msg1 += "_\n\n";
+      }
+    } else {
+      msg1 += "📅 *Today's Fixtures*\nNo matches today\n";
     }
-    await send(msg3);
-  }
 
-  res.status(200).json({ ok: true });
+    await send(msg1);
+
+    // --- Message 2: Group Standings ---
+    const groupStandings = (standingsData?.standings ?? []).filter(s => s.type === "TOTAL");
+    if (groupStandings.length > 0) {
+      let msg2 = "📋 *Group Standings*\n\n";
+      for (const group of groupStandings) {
+        const gName = group.group.replace("GROUP_", "Group ");
+        msg2 += `*${gName}*\n`;
+        for (const r of group.table) {
+          const gd = r.goalDifference >= 0 ? `+${r.goalDifference}` : `${r.goalDifference}`;
+          const name = r.team.shortName || r.team.name;
+          msg2 += `${r.position}. ${getFlag(r.team.name)} ${name}  `;
+          msg2 += `${r.won}-${r.draw}-${r.lost}  GD${gd}  *${r.points}pts*\n`;
+        }
+        msg2 += "\n";
+      }
+      await send(msg2);
+    }
+
+    // --- Message 3: Top Scorers ---
+    const scorers = scorersData?.scorers ?? [];
+    if (scorers.length > 0) {
+      let msg3 = "🥅 *Top Scorers*\n\n";
+      for (let i = 0; i < scorers.length; i++) {
+        const s = scorers[i];
+        msg3 += `${i + 1}. ${getFlag(s.team.name)} ${s.player.name} — ${s.goals} ⚽`;
+        if (s.penalties) msg3 += ` (${s.penalties} pen)`;
+        if (s.assists) msg3 += `  ${s.assists} 🅰️`;
+        msg3 += "\n";
+      }
+      await send(msg3);
+    }
+
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error("notify handler error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 }
