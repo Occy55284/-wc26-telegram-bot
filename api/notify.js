@@ -1,101 +1,9 @@
+import { getFlag, toUKTime, stageLabel, scoreDetail, fetchJson, sendMessage } from "./_helpers.js";
+
 export default async function handler(req, res) {
   const token = process.env.TELEGRAM_TOKEN;
   const chatId = process.env.CHAT_ID;
   const footballKey = process.env.FOOTBALL_KEY;
-
-  const FLAGS = {
-    // South America
-    "Argentina": "🇦🇷", "Brazil": "🇧🇷", "Colombia": "🇨🇴",
-    "Ecuador": "🇪🇨", "Uruguay": "🇺🇾", "Venezuela": "🇻🇪",
-    "Paraguay": "🇵🇾", "Chile": "🇨🇱", "Peru": "🇵🇪", "Bolivia": "🇧🇴",
-    // CONCACAF
-    "USA": "🇺🇸", "Mexico": "🇲🇽", "Canada": "🇨🇦",
-    "Panama": "🇵🇦", "Honduras": "🇭🇳", "Costa Rica": "🇨🇷",
-    "Jamaica": "🇯🇲", "El Salvador": "🇸🇻", "Guatemala": "🇬🇹",
-    // Europe
-    "France": "🇫🇷", "England": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Spain": "🇪🇸",
-    "Germany": "🇩🇪", "Portugal": "🇵🇹", "Netherlands": "🇳🇱",
-    "Belgium": "🇧🇪", "Croatia": "🇭🇷", "Serbia": "🇷🇸",
-    "Switzerland": "🇨🇭", "Poland": "🇵🇱", "Austria": "🇦🇹",
-    "Denmark": "🇩🇰", "Turkey": "🇹🇷", "Türkiye": "🇹🇷",
-    "Czech Republic": "🇨🇿", "Czechia": "🇨🇿",
-    "Scotland": "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "Italy": "🇮🇹", "Wales": "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
-    "Ukraine": "🇺🇦", "Hungary": "🇭🇺", "Slovakia": "🇸🇰",
-    "Romania": "🇷🇴", "Slovenia": "🇸🇮", "Albania": "🇦🇱",
-    "Greece": "🇬🇷", "Norway": "🇳🇴", "Sweden": "🇸🇪",
-    "Finland": "🇫🇮", "Iceland": "🇮🇸", "Russia": "🇷🇺",
-    "Georgia": "🇬🇪",
-    // Africa
-    "Morocco": "🇲🇦", "Senegal": "🇸🇳", "Nigeria": "🇳🇬",
-    "Ghana": "🇬🇭", "Cameroon": "🇨🇲", "Egypt": "🇪🇬",
-    "Tunisia": "🇹🇳", "South Africa": "🇿🇦", "Algeria": "🇩🇿",
-    "Mali": "🇲🇱", "Ivory Coast": "🇨🇮", "Côte d'Ivoire": "🇨🇮",
-    "DR Congo": "🇨🇩", "Cape Verde": "🇨🇻", "Comoros": "🇰🇲",
-    "Tanzania": "🇹🇿", "Uganda": "🇺🇬", "Guinea": "🇬🇳",
-    "Zambia": "🇿🇲", "Angola": "🇦🇴",
-    // Asia
-    "Japan": "🇯🇵", "South Korea": "🇰🇷", "Saudi Arabia": "🇸🇦",
-    "Iran": "🇮🇷", "Australia": "🇦🇺", "Qatar": "🇶🇦",
-    "Uzbekistan": "🇺🇿", "Jordan": "🇯🇴", "Iraq": "🇮🇶",
-    "UAE": "🇦🇪", "China PR": "🇨🇳", "China": "🇨🇳",
-    "Indonesia": "🇮🇩", "Bahrain": "🇧🇭", "Kyrgyzstan": "🇰🇬",
-    "Oman": "🇴🇲", "Kuwait": "🇰🇼",
-    // Oceania
-    "New Zealand": "🇳🇿",
-  };
-
-  function getFlag(name) {
-    return FLAGS[name] || "🏳️";
-  }
-
-  function toUKTime(utcDate) {
-    return new Date(utcDate).toLocaleTimeString("en-GB", {
-      hour: "2-digit", minute: "2-digit", timeZone: "Europe/London",
-    });
-  }
-
-  function stageLabel(match) {
-    const stageMap = {
-      "GROUP_STAGE": match.group ? "Group " + match.group.replace("GROUP_", "") : "Group Stage",
-      "LAST_16": "Round of 16",
-      "QUARTER_FINALS": "Quarter-Final",
-      "SEMI_FINALS": "Semi-Final",
-      "THIRD_PLACE": "3rd Place Play-off",
-      "FINAL": "Final",
-    };
-    return stageMap[match.stage] || (match.stage || "").replace(/_/g, " ");
-  }
-
-  function scoreDetail(match) {
-    const { fullTime: ft, halfTime: ht, extraTime: et, penalties: pen, duration } = match.score;
-    let s = `${ft.home ?? "-"} - ${ft.away ?? "-"}`;
-    if (ht?.home !== null && ht?.home !== undefined && ht?.away !== null) {
-      s += ` (HT: ${ht.home}-${ht.away})`;
-    }
-    if (duration === "EXTRA_TIME") s += " AET";
-    if (duration === "PENALTY_SHOOTOUT" && pen?.home !== null && pen?.home !== undefined) {
-      s += ` (Pens: ${pen.home}-${pen.away})`;
-    }
-    return s;
-  }
-
-  async function send(text) {
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
-    });
-    if (!r.ok) console.error("Telegram send failed:", await r.text());
-  }
-
-  async function fetchJson(url, options) {
-    const r = await fetch(url, options);
-    if (!r.ok) {
-      console.error(`HTTP ${r.status} fetching ${url}`);
-      return null;
-    }
-    return r.json();
-  }
 
   try {
     const today = new Date();
@@ -152,7 +60,7 @@ export default async function handler(req, res) {
       msg1 += "📅 *Today's Fixtures*\nNo matches today\n";
     }
 
-    await send(msg1);
+    await sendMessage(token, chatId, msg1);
 
     // --- Message 2: Group Standings ---
     const groupStandings = (standingsData?.standings ?? []).filter(s => s.type === "TOTAL");
@@ -169,7 +77,7 @@ export default async function handler(req, res) {
         }
         msg2 += "\n";
       }
-      await send(msg2);
+      await sendMessage(token, chatId, msg2);
     }
 
     // --- Message 3: Top Scorers ---
@@ -183,7 +91,7 @@ export default async function handler(req, res) {
         if (s.assists) msg3 += `  ${s.assists} 🅰️`;
         msg3 += "\n";
       }
-      await send(msg3);
+      await sendMessage(token, chatId, msg3);
     }
 
     res.status(200).json({ ok: true });
