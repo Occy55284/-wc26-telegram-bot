@@ -74,13 +74,28 @@ export function scoreDetail(match) {
   return s;
 }
 
-export async function fetchJson(url, options) {
-  const r = await fetch(url, options);
-  if (!r.ok) {
-    console.error(`HTTP ${r.status} fetching ${url}`);
-    return null;
+export async function fetchJson(url, options, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(url, options);
+      if (!r.ok) {
+        if ((r.status >= 500 || r.status === 429) && attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+          continue;
+        }
+        console.error(`HTTP ${r.status} fetching ${url}`);
+        return null;
+      }
+      return r.json();
+    } catch (err) {
+      if (attempt < retries) {
+        await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+        continue;
+      }
+      console.error(`fetch error for ${url}:`, err.message);
+      return null;
+    }
   }
-  return r.json();
 }
 
 export function ordinal(n) {
