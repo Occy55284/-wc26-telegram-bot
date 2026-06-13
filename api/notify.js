@@ -15,15 +15,22 @@ export default async function handler(req, res) {
     const hdrs = { "X-Auth-Token": footballKey };
     const base = "https://api.football-data.org/v4/competitions/WC";
 
-    const [resultsData, fixturesData, standingsData, scorersData] = await Promise.all([
-      fetchJson(`${base}/matches?dateFrom=${yesterdayStr}&dateTo=${yesterdayStr}`, { headers: hdrs }),
-      fetchJson(`${base}/matches?dateFrom=${todayStr}&dateTo=${todayStr}`, { headers: hdrs }),
+    const [matchesData, standingsData, scorersData] = await Promise.all([
+      fetchJson(`${base}/matches?dateFrom=${yesterdayStr}&dateTo=${todayStr}`, { headers: hdrs }),
       fetchJson(`${base}/standings`, { headers: hdrs }),
       fetchJson(`${base}/scorers?limit=10`, { headers: hdrs }),
     ]);
 
-    const results = resultsData?.matches ?? [];
-    const fixtures = fixturesData?.matches ?? [];
+    const matches = matchesData?.matches ?? [];
+
+    // Bucket by status/time rather than calendar date, since matches kicking
+    // off late at night in US time zones land on "today's" UTC date but have
+    // already finished by the time this runs.
+    const FINISHED_STATUSES = ["FINISHED", "AWARDED"];
+    const results = matches.filter(m => FINISHED_STATUSES.includes(m.status));
+    const fixtures = matches.filter(
+      m => (m.status === "SCHEDULED" || m.status === "TIMED") && new Date(m.utcDate) > today
+    );
 
     const dateLabel = today.toLocaleDateString("en-GB", {
       weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -33,7 +40,7 @@ export default async function handler(req, res) {
     let msg1 = `🏆 *World Cup 2026 — Daily Update*\n_${dateLabel}_\n\n`;
 
     if (results.length > 0) {
-      msg1 += "📊 *Yesterday's Results*\n\n";
+      msg1 += "📊 *Latest Results*\n\n";
       for (const m of results) {
         const home = m.homeTeam.name;
         const away = m.awayTeam.name;
@@ -43,11 +50,11 @@ export default async function handler(req, res) {
         msg1 += "_\n\n";
       }
     } else {
-      msg1 += "📊 *Yesterday's Results*\nNo matches yesterday\n\n";
+      msg1 += "📊 *Latest Results*\nNo matches in the last day\n\n";
     }
 
     if (fixtures.length > 0) {
-      msg1 += "📅 *Today's Fixtures*\n\n";
+      msg1 += "📅 *Upcoming Fixtures*\n\n";
       for (const m of fixtures) {
         const home = m.homeTeam.name;
         const away = m.awayTeam.name;
@@ -57,7 +64,7 @@ export default async function handler(req, res) {
         msg1 += "_\n\n";
       }
     } else {
-      msg1 += "📅 *Today's Fixtures*\nNo matches today\n";
+      msg1 += "📅 *Upcoming Fixtures*\nNo matches scheduled for today\n";
     }
 
     await sendMessage(token, chatId, msg1);
